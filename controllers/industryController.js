@@ -1,6 +1,7 @@
 const Industry = require('../models/Industry');
 const Position = require('../models/Position');
 const { validationResult } = require('express-validator');
+const Major = require('../models/Major');
 
 // @desc    Get all industries
 // @route   GET /api/industries
@@ -188,6 +189,56 @@ exports.getIndustryPositions = async (req, res) => {
       error: 'Server Error',
       message: error.message,
     });
+  }
+};
+
+// @desc    Get all industries with positions and majors (MN/EN)
+// @route   GET /api/industry/positions
+// @access  Public
+exports.getIndustriesWithPositionsAndMajors = async (req, res) => {
+  try {
+    const result = await Industry.aggregate([
+      { $match: { is_active: true } },
+      { $sort: { sort_order: 1 } },
+      {
+        $lookup: {
+          from: 'positions',
+          let: { indId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $and: [ { $eq: ['$industry_id', '$$indId'] }, { $eq: ['$is_active', true] } ] } } },
+            { $sort: { sort_order: 1 } },
+            { $project: { _id: 1, name_en: 1, name_mn: 1, sort_order: 1 } },
+          ],
+          as: 'positions',
+        },
+      },
+      {
+        $lookup: {
+          from: 'majors',
+          let: { indId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $and: [ { $eq: ['$industry_id', '$$indId'] }, { $eq: ['$is_active', true] } ] } } },
+            { $sort: { sort_order: 1 } },
+            { $project: { _id: 1, name_en: 1, name_mn: 1, sort_order: 1 } },
+          ],
+          as: 'majors',
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name_en: 1,
+          name_mn: 1,
+          sort_order: 1,
+          positions: 1,
+          majors: 1,
+        },
+      },
+    ]);
+
+    res.status(200).json({ success: true, count: result.length, industries: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Server Error', message: error.message });
   }
 };
 

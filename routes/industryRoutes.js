@@ -8,10 +8,12 @@ const {
   deleteIndustry,
   bulkInsertIndustries,
   getIndustryPositions,
+  getIndustriesWithPositionsAndMajors,
 } = require('../controllers/industryController');
 const { industryValidationRules } = require('../middleware/validators');
 
 router.post('/bulk', bulkInsertIndustries);
+router.get('/positions', getIndustriesWithPositionsAndMajors);
 
 router
   .route('/')
