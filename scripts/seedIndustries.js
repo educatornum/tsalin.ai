@@ -1,7 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Industry = require('../models/Industry');
-const industriesData = require('../seeds/industries.json');
+const industriesData = require('../seeds/industries-last.json');
 
 const seedIndustries = async () => {
   try {

@@ -63,6 +63,32 @@ exports.getPositionsByIndustry = async (req, res) => {
   }
 };
 
+// @desc    Get positions without industry
+// @route   GET /api/positions/without-industry
+// @access  Public
+exports.getPositionsWithoutIndustry = async (req, res) => {
+  try {
+    const positions = await Position.find({
+      $or: [
+        { industry_id: { $exists: false } },
+        { industry_id: null },
+      ],
+    }).sort({ sort_order: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: positions.length,
+      data: positions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Server Error',
+      message: error.message,
+    });
+  }
+};
+
 // @desc    Get single position
 // @route   GET /api/positions/:id
 // @access  Public

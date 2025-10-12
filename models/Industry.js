@@ -21,6 +21,15 @@ const industrySchema = new mongoose.Schema(
       required: [true, 'Average salary is required'],
       trim: true,
     },
+    // Numeric salary fields (MNT), preferred for computations
+    avg_salary_mnt: {
+      average: { type: Number },
+      junior: { type: Number },
+      mid: { type: Number },
+      senior: { type: Number },
+    },
+    avg_salary_min_mnt: { type: Number },
+    avg_salary_max_mnt: { type: Number },
     sort_order: {
       type: Number,
       required: true,

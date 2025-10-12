@@ -11,6 +11,14 @@ const positionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    industry_name_mn: {
+      type: String,
+      trim: true,
+    },
+    industry_name_en: {
+      type: String,
+      trim: true,
+    },
     name_mn: {
       type: String,
       required: [true, 'Mongolian name is required'],

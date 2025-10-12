@@ -30,9 +30,11 @@ app.get('/', (req, res) => {
       users: '/api/users',
       industries: '/api/industries',
       positions: '/api/positions',
+      majors: '/api/majors',
       proLevels: '/api/pro-levels',
       salaryPosts: '/api/salary-posts',
       newPositions: '/api/new-positions',
+      upload: '/api/upload/cv',
       stats: '/api/stats',
     },
   });
@@ -41,10 +43,12 @@ app.get('/', (req, res) => {
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/industries', require('./routes/industryRoutes'));
 app.use('/api/positions', require('./routes/positionRoutes'));
+app.use('/api/majors', require('./routes/majorRoutes'));
 app.use('/api/pro-levels', require('./routes/proLevelRoutes'));
 app.use('/api/salary-posts', require('./routes/salaryPostRoutes'));
 app.use('/api/new-positions', require('./routes/newPositionRoutes'));
 app.use('/api/stats', require('./routes/statsRoutes'));
+app.use('/api/upload', require('./routes/uploadRoutes'));
 app.use('/api', require('./routes/claudeRoutes'));
 app.use('/api/ai', require('./routes/claudeRoutes'));
 

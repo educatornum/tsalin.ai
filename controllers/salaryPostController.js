@@ -1,4 +1,7 @@
+const mongoose = require('mongoose');
 const SalaryPost = require('../models/SalaryPost');
+const Position = require('../models/Position');
+const Major = require('../models/Major');
 const { validationResult } = require('express-validator');
 
 // @desc    Get all salary posts
@@ -12,6 +15,7 @@ exports.getSalaryPosts = async (req, res) => {
       level, 
       is_verified, 
       is_active,
+      source,
       min_salary,
       max_salary,
       limit = 100,
@@ -25,6 +29,18 @@ exports.getSalaryPosts = async (req, res) => {
     if (level) filter.level = Number(level);
     if (is_verified !== undefined) filter.is_verified = is_verified === 'true';
     if (is_active !== undefined) filter.is_active = is_active === 'true';
+    if (source) {
+      const allowed = new Set(['user_submission', 'cv_upload', 'lambda', 'third_party', 'other']);
+      const requested = String(source)
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => allowed.has(s));
+      if (requested.length === 1) {
+        filter.source = requested[0];
+      } else if (requested.length > 1) {
+        filter.source = { $in: requested };
+      }
+    }
     
     if (min_salary || max_salary) {
       filter.salary = {};
@@ -95,12 +111,17 @@ exports.getSalaryPost = async (req, res) => {
 exports.getSalaryStats = async (req, res) => {
   try {
     const { industry_id, position_id } = req.params;
+    const indId = mongoose.Types.ObjectId.isValid(industry_id) ? new mongoose.Types.ObjectId(industry_id) : null;
+    const posId = mongoose.Types.ObjectId.isValid(position_id) ? new mongoose.Types.ObjectId(position_id) : null;
+    if (!indId || !posId) {
+      return res.status(400).json({ success: false, message: 'Invalid industry_id or position_id' });
+    }
 
     const stats = await SalaryPost.aggregate([
       {
         $match: {
-          industry_id: require('mongoose').Types.ObjectId(industry_id),
-          position_id: require('mongoose').Types.ObjectId(position_id),
+          industry_id: indId,
+          position_id: posId,
           is_active: true,
         },
       },
@@ -119,8 +140,8 @@ exports.getSalaryStats = async (req, res) => {
     const levelStats = await SalaryPost.aggregate([
       {
         $match: {
-          industry_id: require('mongoose').Types.ObjectId(industry_id),
-          position_id: require('mongoose').Types.ObjectId(position_id),
+          industry_id: indId,
+          position_id: posId,
           is_active: true,
         },
       },
@@ -283,6 +304,185 @@ exports.bulkInsertSalaryPosts = async (req, res) => {
       error: 'Server Error',
       message: error.message,
     });
+  }
+};
+
+// @desc    Filter salary posts by industry, position, optional level and experience
+// @route   POST /api/salary-posts/filter
+// @access  Public
+exports.filterSalaryPosts = async (req, res) => {
+  try {
+    const { industry_id, position_id, level, experience_year } = req.body || {};
+
+    if (!industry_id || !position_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'industry_id and position_id are required',
+      });
+    }
+
+    const filter = {
+      industry_id,
+      position_id,
+      is_active: true,
+    };
+
+    if (level !== undefined && level !== null && String(level).trim() !== '') {
+      filter.level = Number(level);
+    }
+    if (experience_year !== undefined && experience_year !== null && String(experience_year).trim() !== '') {
+      filter.experience_years = Number(experience_year);
+    }
+
+    const items = await SalaryPost.find(filter)
+      .populate('industry_id', 'name_mn name_en average_salary')
+      .populate('position_id', 'name_mn name_en')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: items.length,
+      data: items,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Server Error', message: error.message });
+  }
+};
+
+// Helper: map experience years to level (1-10)
+function yearsToLevel(years) {
+  const y = Number(years) || 0;
+  if (y <= 0) return 1;
+  if (y === 1) return 2;
+  if (y === 2) return 3;
+  if (y === 3) return 4;
+  if (y <= 5) return 5;
+  if (y <= 7) return 6;
+  if (y <= 9) return 7;
+  if (y <= 11) return 8;
+  if (y <= 14) return 9;
+  return 10;
+}
+
+// @desc    Estimate salary stats for user by industry + position (+experience)
+// @route   POST /api/salary-posts/estimate
+// @access  Public
+exports.estimateSalary = async (req, res) => {
+  try {
+    const { industry_id, position_id, experience_years } = req.body || {};
+    if (!industry_id || !position_id) {
+      return res.status(400).json({ success: false, message: 'industry_id and position_id are required' });
+    }
+
+    const indId = mongoose.Types.ObjectId.isValid(industry_id) ? new mongoose.Types.ObjectId(industry_id) : null;
+    const posId = mongoose.Types.ObjectId.isValid(position_id) ? new mongoose.Types.ObjectId(position_id) : null;
+    if (!indId || !posId) {
+      return res.status(400).json({ success: false, message: 'Invalid industry_id or position_id' });
+    }
+
+    const baseMatch = {
+      industry_id: indId,
+      position_id: posId,
+      is_active: true,
+    };
+
+    // Overall stats
+    const overallAgg = await SalaryPost.aggregate([
+      { $match: baseMatch },
+      { $group: { _id: null, avgSalary: { $avg: '$salary' }, minSalary: { $min: '$salary' }, maxSalary: { $max: '$salary' }, count: { $sum: 1 } } },
+    ]);
+
+    // By level stats
+    const byLevelAgg = await SalaryPost.aggregate([
+      { $match: baseMatch },
+      { $group: { _id: '$level', avgSalary: { $avg: '$salary' }, minSalary: { $min: '$salary' }, maxSalary: { $max: '$salary' }, count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    let forLevel = null;
+    let computedLevel = null;
+    if (experience_years !== undefined && experience_years !== null && String(experience_years).trim() !== '') {
+      computedLevel = yearsToLevel(experience_years);
+      const forLevelAgg = await SalaryPost.aggregate([
+        { $match: { ...baseMatch, level: computedLevel } },
+        { $group: { _id: null, avgSalary: { $avg: '$salary' }, minSalary: { $min: '$salary' }, maxSalary: { $max: '$salary' }, count: { $sum: 1 } } },
+      ]);
+      forLevel = forLevelAgg[0] || null;
+    }
+
+    return res.status(200).json({
+      success: true,
+      computedLevel,
+      overall: overallAgg[0] || null,
+      forLevel,
+      byLevel: byLevelAgg,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Server Error', message: error.message });
+  }
+};
+
+// @desc    Get salary posts by industry and major
+// @route   GET /api/salary-posts/by-major
+// @access  Public
+exports.getSalaryPostsByIndustryAndMajor = async (req, res) => {
+  try {
+    const { industry_id, major_id, limit = 100, page = 1 } = req.query;
+    if (!industry_id || !major_id) {
+      return res.status(400).json({ success: false, message: 'industry_id and major_id are required' });
+    }
+
+    const major = await Major.findById(major_id).lean();
+    if (!major) {
+      return res.status(404).json({ success: false, message: 'Major not found' });
+    }
+
+    const names = [];
+    if (major.name_en) names.push(major.name_en);
+    if (major.name_mn) names.push(major.name_mn);
+    if (Array.isArray(major.synonyms)) names.push(...major.synonyms);
+
+    const regexes = names
+      .filter(Boolean)
+      .map((n) => new RegExp(`^${String(n).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
+
+    const positions = await Position.find({
+      industry_id,
+      is_active: true,
+      $or: [
+        { name_en: { $in: regexes } },
+        { name_mn: { $in: regexes } },
+      ],
+    }).select({ _id: 1 }).lean();
+
+    const positionIds = positions.map((p) => p._id);
+    if (!positionIds.length) {
+      return res.status(200).json({ success: true, count: 0, total: 0, page: Number(page), pages: 0, data: [] });
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const filter = { industry_id, position_id: { $in: positionIds }, is_active: true };
+
+    const [items, total] = await Promise.all([
+      SalaryPost.find(filter)
+        .populate('industry_id', 'name_mn name_en')
+        .populate('position_id', 'name_mn name_en')
+        .sort({ createdAt: -1 })
+        .limit(Number(limit))
+        .skip(skip),
+      SalaryPost.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: items.length,
+      total: total,
+      page: Number(page),
+      pages: Math.ceil(total / Number(limit)),
+      data: items,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Server Error', message: error.message });
   }
 };
 
