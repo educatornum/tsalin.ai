@@ -7,41 +7,29 @@ const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 // Map provided external industry IDs to our industry English names
 const externalIndustryIdToNameEn = new Map([
-  ['68eb4ec58fe2edca39211a0e', 'Management'],
-  ['68eb4ec58fe2edca39211a0f', 'Accounting & Finance'],
-  ['68eb4ec58fe2edca39211a10', 'Education & Training'],
-  ['68eb4ec58fe2edca39211a11', 'Customer Service'],
-  ['68eb4ec58fe2edca39211a12', 'Data & Analytics'],
-  ['68eb4ec58fe2edca39211a13', 'Design & Creative'],
-  ['68eb4ec58fe2edca39211a14', 'Marketing & Sales'],
-  ['68eb4ec58fe2edca39211a15', 'IT & Software Engineering'],
-  ['68eb4ec58fe2edca39211a16', 'Legal, Risk & Compliance'],
-  ['68eb4ec58fe2edca39211a17', 'HR & Administration'],
-  ['68eb4ec58fe2edca39211a18', 'Construction & Engineering'],
-  ['68eb4ec58fe2edca39211a19', 'Mining & Heavy Machinery'],
-  ['68eb4ec58fe2edca39211a1a', 'Manufacturing & Production'],
-  ['68eb4ec58fe2edca39211a1b', 'Manufacturing & Production'],
-  ['68eb4ec58fe2edca39211a1c', 'Health, Safety & Environment'],
-  ['68eb4ec58fe2edca39211a1d', 'Healthcare & Medical'],
-  ['68eb4ec58fe2edca39211a1e', 'Hospitality, Food & Beverage'],
-  ['68eb4ec58fe2edca39211a1f', 'Transportation & Logistics'],
-  ['68eb4ec58fe2edca39211a20', 'Transportation & Logistics'],
-  ['68eb4ec58fe2edca39211a21', 'Auto Repair & Mechanics'],
-  ['68eb4ec58fe2edca39211a22', 'Financial Services & Insurance'],
-  ['68eb4ec58fe2edca39211a23', 'Security & Protective Services'],
-  ['68eb4ec58fe2edca39211a24', 'Agriculture & Environmental'],
-  ['68eb4ec58fe2edca39211a25', 'General Services'],
-  ['68eb4ec58fe2edca39211a26', 'Other / Specialized'],
-  ['68eb4ec58fe2edca39211a27', 'FinTech & Blockchain'],
-  ['68eb4ec58fe2edca39211a28', 'Media, Journalism & Communications'],
-  ['68eb4ec58fe2edca39211a29', 'Arts, Culture & Sports'],
-  ['68eb4ec58fe2edca39211a2a', 'Public Sector & International Relations'],
-  ['68eb4ec58fe2edca39211a2b', 'Trade, Import & Export'],
-  ['68eb4ec58fe2edca39211a2c', 'Energy & Infrastructure'],
-  ['68eb4ec58fe2edca39211a2d', 'Banking, Loans & Investment'],
-  ['68eb4ec58fe2edca39211a2e', 'E-commerce & Logistics Tech'],
-  ['68eb4ec58fe2edca39211a2f', 'Sustainability & Environmental Science'],
-  ['68eb4ec58fe2edca39211a30', 'EdTech & Research'],
+  ['68edff1df30719918c3325d8', 'Management'],
+  ['68edff1df30719918c3325d9', 'Accounting & Finance'],
+  ['68edff1df30719918c3325da', 'Education & Training'],
+  ['68edff1df30719918c3325db', 'Customer Service'],
+  ['68edff1df30719918c3325dc', 'Data & Analytics'],
+  ['68edff1df30719918c3325dd', 'Design & Creative'],
+  ['68edff1df30719918c3325de', 'Marketing & Sales'],
+  ['68edff1df30719918c3325df', 'IT & Software Engineering'],
+  ['68edff1df30719918c3325e0', 'Legal, Risk & Compliance'],
+  ['68edff1df30719918c3325e1', 'HR & Administration'],
+  ['68edff1df30719918c3325e2', 'Construction & Engineering'],
+  ['68edff1df30719918c3325e3', 'Mining & Heavy Machinery'],
+  ['68edff1df30719918c3325e4', 'Manufacturing & Production'],
+  ['68edff1df30719918c3325e5', 'Health, Safety & Environment'],
+  ['68edff1df30719918c3325e6', 'Healthcare & Medical'],
+  ['68edff1df30719918c3325e7', 'Hospitality, Food & Beverage'],
+  ['68edff1df30719918c3325e8', 'Transportation & Logistics'],
+  ['68edff1df30719918c3325e9', 'Auto Repair & Mechanics'],
+  ['68edff1df30719918c3325ea', 'Financial Services & Insurance'],
+  ['68edff1df30719918c3325eb', 'Security & Protective Services'],
+  ['68edff1df30719918c3325ec', 'Agriculture & Environmental'],
+  ['68edff1df30719918c3325ed', 'General Services'],
+  ['68edff1df30719918c3325ee', 'Other / Specialized'],
 ]);
 
 function yearsToLevel(years) {
@@ -205,47 +193,35 @@ Monthly salaries should be estimated for this specific candidate per month. How 
 Each role must be an object with these fields:
 - role_en: job title (string) in English 
 - role_mn: job title (string) in Mongolian
-- salary: average monthly salary in MNT (integer) + add  12.5%  on top of it
+- salary: average monthly salary in MNT (integer)
 - experience: minimum years of relevant experience (integer)
 - industry: industry ID from the list below (string)
 
 Assign industries using these IDs:
-_id,name_mn,name_en
-68eb4ec58fe2edca39211a0e = Management = Менежмент
-68eb4ec58fe2edca39211a0f = Accounting & Finance = Нягтлан, Санхүү
-68eb4ec58fe2edca39211a10 = Education & Training = Боловсрол
-68eb4ec58fe2edca39211a11 = Customer Service = Хэрэглэгчийн үйлчилгээ
-68eb4ec58fe2edca39211a12 = Data & Analytics = Өгөгдөл ба Аналитик
-68eb4ec58fe2edca39211a13 = Design & Creative = Дизайн ба Контент
-68eb4ec58fe2edca39211a14 = Marketing & Sales = Маркетинг ба Борлуулалт
-68eb4ec58fe2edca39211a15 = IT & Software Engineering = Мэдээллийн технологи
-68eb4ec58fe2edca39211a16 = Legal, Risk & Compliance = Хууль ба Эрсдэл
-68eb4ec58fe2edca39211a17 = HR & Administration = Хүний нөөц ба Захиргаа
-68eb4ec58fe2edca39211a18 = Construction & Engineering = Барилга ба Инженерчлэл
-68eb4ec58fe2edca39211a19 = Mining & Heavy Machinery = Уул уурхай ба Машин механизм
-68eb4ec58fe2edca39211a1a = Manufacturing & Production = Үйлдвэрлэл ба Үйлдвэрийн дэмжлэг
-68eb4ec58fe2edca39211a1b = Manufacturing & Production = Үйлдвэрлэл ба Үйлдвэрийн дэмжлэг
-68eb4ec58fe2edca39211a1c = Health, Safety & Environment = ХАБЭА
-68eb4ec58fe2edca39211a1d = Healthcare & Medical = Эрүүл мэнд
-68eb4ec58fe2edca39211a1e = Hospitality, Food & Beverage = Зочлох үйлчилгээ ба Хоол
-68eb4ec58fe2edca39211a1f = Transportation & Logistics = Тээвэр ба Логистик
-68eb4ec58fe2edca39211a20 = Transportation & Logistics = Тээвэр ба Логистик
-68eb4ec58fe2edca39211a21 = Auto Repair & Mechanics = Авто засвар ба Механик
-68eb4ec58fe2edca39211a22 = Financial Services & Insurance = Санхүүгийн үйлчилгээ ба Даатгал
-68eb4ec58fe2edca39211a23 = Security & Protective Services = Аюулгүй байдал ба Хамгаалалт
-68eb4ec58fe2edca39211a24 = Agriculture & Environmental = Хөдөө аж ахуй
-68eb4ec58fe2edca39211a25 = General Services = Туслах үйлчилгээ
-68eb4ec58fe2edca39211a26 = Other / Specialized = Бусад мэргэжил
-68eb4ec58fe2edca39211a27 = FinTech & Blockchain = Санхүүгийн технологи ба Блокчэйн
-68eb4ec58fe2edca39211a28 = Media, Journalism & Communications = Медиа, Сэтгүүл зүй ба Харилцаа
-68eb4ec58fe2edca39211a29 = Arts, Culture & Sports = Соёл, Урлаг ба Спорт
-68eb4ec58fe2edca39211a2a = Public Sector & International Relations = Олон улсын харилцаа ба Төрийн үйлчилгээ
-68eb4ec58fe2edca39211a2b = Trade, Import & Export = Худалдаа, Импорт ба Экспорт
-68eb4ec58fe2edca39211a2c = Energy & Infrastructure = Эрчим хүч ба Дэд бүтэц
-68eb4ec58fe2edca39211a2d = Banking, Loans & Investment = Банк, Зээл ба Хөрөнгө оруулалт
-68eb4ec58fe2edca39211a2e = E-commerce & Logistics Tech = E-commerce ба Логистик технологи
-68eb4ec58fe2edca39211a2f = Sustainability & Environmental Science = Байгаль орчин ба Тогтвортой хөгжил
-68eb4ec58fe2edca39211a30 = EdTech & Research = Боловсролын технологи ба Судалгаа
+_id,name_en,name_mn
+68edff1df30719918c3325d8 =	Management = Менежмент
+68edff1df30719918c3325d9 =	Accounting & Finance = Нягтлан, Санхүү
+68edff1df30719918c3325da =	Education & Training = Боловсрол
+68edff1df30719918c3325db =	Customer Service = Хэрэглэгчийн үйлчилгээ
+68edff1df30719918c3325dc =	Data & Analytics = Өгөгдөл ба Аналитик
+68edff1df30719918c3325dd =	Design & Creative = Дизайн ба Контент
+68edff1df30719918c3325de =	Marketing & Sales = Маркетинг ба Борлуулалт
+68edff1df30719918c3325df =	IT & Software Engineering = Мэдээллийн технологи
+68edff1df30719918c3325e0 =	Legal, Risk & Compliance = Хууль ба Эрсдэл
+68edff1df30719918c3325e1 =	HR & Administration = Хүний нөөц ба Захиргаа
+68edff1df30719918c3325e2 =	Construction & Engineering = Барилга ба Инженерчлэл
+68edff1df30719918c3325e3 =	Mining & Heavy Machinery = Уул уурхай ба Машин механизм
+68edff1df30719918c3325e4 =	Manufacturing & Production = Үйлдвэрлэл ба Үйлдвэрийн дэмжлэг
+68edff1df30719918c3325e5 =	Health, Safety & Environment = ХАБЭА
+68edff1df30719918c3325e6 =	Healthcare & Medical = Эрүүл мэнд
+68edff1df30719918c3325e7 =	Hospitality, Food & Beverage = Зочлох үйлчилгээ ба Хоол
+68edff1df30719918c3325e8 =	Transportation & Logistics = Тээвэр ба Логистик
+68edff1df30719918c3325e9 =	Auto Repair & Mechanics = Авто засвар ба Механик
+68edff1df30719918c3325ea =	Financial Services & Insurance = Санхүүгийн үйлчилгээ ба Даатгал
+68edff1df30719918c3325eb =	Security & Protective Services = Аюулгүй байдал ба Хамгаалалт
+68edff1df30719918c3325ec =	Agriculture & Environmental = Хөдөө аж ахуй
+68edff1df30719918c3325ed =	General Services = Туслах үйлчилгээ
+68edff1df30719918c3325ee =	Other / Specialized = Бусад мэргэжил
 
 Rules:
 - Deduct 20% from salary if the candidate worked and studied at the same time.

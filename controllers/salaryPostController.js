@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const SalaryPost = require('../models/SalaryPost');
 const Position = require('../models/Position');
 const Major = require('../models/Major');
+const Industry = require('../models/Industry');
 const { validationResult } = require('express-validator');
 
 // @desc    Get all salary posts
@@ -480,6 +481,113 @@ exports.getSalaryPostsByIndustryAndMajor = async (req, res) => {
       page: Number(page),
       pages: Math.ceil(total / Number(limit)),
       data: items,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Server Error', message: error.message });
+  }
+};
+
+// @desc    Get salary summary for chart (industry min/max + user position)
+// @route   POST /api/salary-posts/summary
+// @access  Public
+exports.getSalarySummary = async (req, res) => {
+  try {
+    const { industry_id, salary, experience_year, pro_levels } = req.body || {};
+    if (!industry_id) {
+      return res.status(400).json({ success: false, message: 'industry_id is required' });
+    }
+
+    const userSalary = typeof salary === 'number' ? salary : null;
+    const userExperience = typeof experience_year === 'number' ? experience_year : null;
+    const userLevel = typeof pro_levels === 'number' ? pro_levels : (userExperience != null ? yearsToLevel(userExperience) : null);
+
+    const indId = mongoose.Types.ObjectId.isValid(industry_id) ? new mongoose.Types.ObjectId(industry_id) : null;
+    if (!indId) {
+      return res.status(400).json({ success: false, message: 'Invalid industry_id' });
+    }
+
+    // Get industry info
+    const industry = await Industry.findById(indId).lean();
+    if (!industry) {
+      return res.status(404).json({ success: false, message: 'Industry not found' });
+    }
+
+    const baseMatch = { industry_id: indId, is_active: true };
+
+    // Get all salary posts for this industry
+    let salaryPosts = await SalaryPost.find(baseMatch)
+      .populate('position_id', 'name_mn name_en')
+      .sort({ salary: 1 })
+      .lean();
+
+    // Generate synthetic salary points from min to max (200k increments)
+    const minSal = industry.avg_salary_min_mnt || 0;
+    const maxSal = industry.avg_salary_max_mnt || 0;
+    if (minSal > 0 && maxSal > minSal) {
+      const increment = 200000;
+      for (let sal = minSal; sal <= maxSal; sal += increment) {
+        salaryPosts.push({
+          _id: `synthetic-${sal}`,
+          salary: sal,
+          level: null,
+          experience_years: null,
+          is_verified: false,
+          isSynthetic: true,
+          position_id: null,
+          is_active: true,
+        });
+      }
+    }
+
+    // Add user's data to the list if provided
+    if (userSalary != null) {
+      const userEntry = {
+        _id: 'user',
+        salary: userSalary,
+        level: userLevel,
+        experience_years: userExperience,
+        isUser: true,
+        position_id: null,
+        is_active: true,
+      };
+      salaryPosts.push(userEntry);
+    }
+
+    // Sort all posts by salary to show user's position
+    salaryPosts.sort((a, b) => a.salary - b.salary);
+
+    // Compute industry min/max/avg from real salary posts only (excluding user and synthetic)
+    const realPosts = salaryPosts.filter((p) => !p.isUser && !p.isSynthetic);
+    let actualMinSalary = null;
+    let actualMaxSalary = null;
+    let actualAvgSalary = null;
+    if (realPosts.length > 0) {
+      const salaries = realPosts.map((p) => p.salary);
+      actualMinSalary = Math.min(...salaries);
+      actualMaxSalary = Math.max(...salaries);
+      actualAvgSalary = Math.round(salaries.reduce((sum, s) => sum + s, 0) / salaries.length);
+    }
+
+    // Industry salary ranges from model
+    const industrySalaryRanges = industry.avg_salary_mnt || {};
+
+    return res.status(200).json({
+      success: true,
+      userLevel,
+      totalCount: realPosts.length,
+      industryMinSalary: industry.avg_salary_min_mnt || null,
+      industryMaxSalary: industry.avg_salary_max_mnt || null,
+      industryAvgSalary: industrySalaryRanges.average || null,
+      industrySalaryRanges: {
+        junior: industrySalaryRanges.junior || null,
+        mid: industrySalaryRanges.mid || null,
+        senior: industrySalaryRanges.senior || null,
+        average: industrySalaryRanges.average || null,
+      },
+      actualMinSalary,
+      actualMaxSalary,
+      actualAvgSalary,
+      salaryPosts,
     });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Server Error', message: error.message });

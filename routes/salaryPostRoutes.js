@@ -11,6 +11,7 @@ const {
   getSalaryPostsByIndustryAndMajor,
   filterSalaryPosts,
   estimateSalary,
+  getSalarySummary,
 } = require('../controllers/salaryPostController');
 const { salaryPostValidationRules } = require('../middleware/validators');
 
@@ -19,6 +20,7 @@ router.get('/stats/:industry_id/:position_id', getSalaryStats);
 router.get('/by-major', getSalaryPostsByIndustryAndMajor);
 router.post('/filter', filterSalaryPosts);
 router.post('/estimate', estimateSalary);
+router.post('/summary', getSalarySummary);
 
 router
   .route('/')

@@ -7,8 +7,8 @@ const Position = require('../models/Position');
 function loadSource() {
   // Primary source (note: file name is intentionally misspelled in repo: industies-last.json)
   const candidates = [
-    path.join(__dirname, '../seeds/industies-last.json'),
-    path.join(__dirname, '../seeds/industries-last.json'),
+    path.join(__dirname, '../seeds/industies-last-review.json'),
+    path.join(__dirname, '../seeds/industries-last-review.json'),
   ];
   for (const p of candidates) {
     try {
