@@ -14,7 +14,15 @@ const app = express();
 // Middleware
 app.use(helmet()); // Security headers
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  origin: [
+    'http://35.198.155.219',
+    'http://35.198.155.219:80',
+    'https://beta.tsalin.ai',
+    'http://localhost:5173', // for dev
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json()); // Body parser
 app.use(express.urlencoded({ extended: true }));
