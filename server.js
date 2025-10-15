@@ -19,6 +19,7 @@ app.use(cors({
     'http://35.198.155.219:80',
     'https://beta.tsalin.ai',
     'http://localhost:5173', // for dev
+    'http://tsalin-frontend', // Docker network
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
