@@ -8,7 +8,7 @@ exports.uploadCv = async (req, res) => {
       return res.status(400).json({ success: false, message: 'file is required (multipart form-data, field name "file")' });
     }
 
-    const bucket = process.env.AWS_S3_BUCKET || 'cdn.tsalin.ai';
+    const bucket = 'cdn.tsalin.ai';
     let region = process.env.AWS_REGION;
     const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
     const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
