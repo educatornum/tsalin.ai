@@ -3,6 +3,7 @@ const router = express.Router();
 const Industry = require('../models/Industry');
 const Position = require('../models/Position');
 const SalaryPost = require('../models/SalaryPost');
+const ProLevel = require('../models/ProLevel');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 // Map provided external industry IDs to our industry English names
@@ -400,6 +401,285 @@ Here is the resume:
       reason: 'Unhandled server error',
       error: err?.message,
     });
+    return res.status(500).json({ success: false, message: 'Server error', error: err?.message });
+  }
+});
+
+// New endpoint to analyze CSV data with Claude
+router.post('/claude/analyze-csv', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const fs = require('fs');
+    const path = require('path');
+    const { parse } = require('csv-parse');
+    
+    if (!apiKey) {
+      return res.status(500).json({ success: false, message: 'Missing ANTHROPIC_API_KEY' });
+    }
+
+    const CSV_PATH = path.resolve(__dirname, '../seeds/job_posting_202510051046.csv');
+    
+    // Read first 50 rows from CSV (configurable via query param)
+    const batchSize = parseInt(req.query.batchSize) || 50;
+    const maxBatchSize = 200; // Safety limit
+    
+    if (batchSize > maxBatchSize) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Batch size too large. Maximum allowed: ${maxBatchSize}` 
+      });
+    }
+
+    const csvData = fs.readFileSync(CSV_PATH, 'utf-8');
+    const records = [];
+    let rowCount = 0;
+    
+    await new Promise((resolve, reject) => {
+      parse(csvData, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      })
+      .on('data', (row) => {
+        if (rowCount < batchSize) {
+          records.push(row);
+          rowCount++;
+        }
+        if (rowCount >= batchSize) {
+          resolve();
+        }
+      })
+      .on('end', resolve)
+      .on('error', reject);
+    });
+
+    // Get all industries and pro levels for mapping
+    const allIndustries = await Industry.find({}).lean();
+    const allProLevels = await ProLevel.find({}).lean();
+    
+    const industriesList = allIndustries.map(i => `${i.name_en} (id: ${i._id})`).join('\n');
+    const proLevelsList = allProLevels.map(p => `Level ${p.level}: ${p.name_en} (${p.name_mn})`).join('\n');
+
+    // Prepare CSV data as text for Claude
+    const csvText = records.map((row, idx) => 
+      `Row ${idx + 1}: ${JSON.stringify(row)}`
+    ).join('\n');
+
+    const systemPrompt = `You are analyzing job posting CSV data. Your task is to:
+1. Extract and clean the position title from the "major" field (remove company names in /slashes/, parenthesis, and emojis)
+2. Map the "job_category" field to the most appropriate industry from the provided list
+3. Extract salary from "max_salary" field
+4. Map "level" field (MID-LEVEL, SENIOR, etc.) to our professional level numbers (1-10)
+5. Return structured data ready for database insertion
+
+Processing ${batchSize} rows in this batch.
+
+Available Industries:
+${industriesList}
+
+Available Professional Levels:
+${proLevelsList}
+
+Level Mapping Rules:
+- ENTRY-LEVEL, JUNIOR → Level 1 (Intern, Student) - 0 years experience
+- MID-LEVEL → Level 4 (Specialist) - 3 years experience
+- SENIOR → Level 5 (Senior Specialist) - 5 years experience
+- MANAGER, LEAD → Level 6 (Manager) - 7 years experience
+- SENIOR MANAGER → Level 7 (Senior Manager) - 9 years experience
+- HEAD, DIRECTOR → Level 8 (Department Head) - 12 years experience
+- EXECUTIVE, LEADERSHIP → Level 10 (Executive Management) - 20 years experience
+
+Important rules:
+- Clean position titles: Remove content in /slashes/ and (), remove emojis, apply title case
+- Use max_salary as the salary value
+- Map CSV level strings to our level numbers (1-10)
+- Find the best matching industry from the list
+- Return valid JSON array only`;
+
+    const userPrompt = `Please analyze these CSV rows and return a JSON array with this structure:
+[
+  {
+    "title_mn": "cleaned position title in Mongolian",
+    "title_en": "cleaned position title in English", 
+    "industry_id": "matched industry ID",
+    "industry_name_en": "matched industry name",
+    "industry_name_mn": "matched industry name in Mongolian",
+    "salary": number,
+    "level": number (1-10),
+    "level_name_en": "Professional level name",
+    "level_name_mn": "Professional level name in Mongolian",
+    "experience_years": number (based on level mapping rules above),
+    "job_category_original": "original category from CSV"
+  }
+]
+
+CSV Data:
+${csvText}
+
+Return ONLY the JSON array, no additional text.`;
+
+    // Call Claude API
+    const doFetch = typeof globalThis.fetch === 'function' ? globalThis.fetch : (await import('node-fetch')).default;
+    const response = await doFetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-latest',
+        max_tokens: 4000,
+        temperature: 0.2,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return res.status(response.status).json({ success: false, message: 'Claude API error', details: errText });
+    }
+
+    const data = await response.json();
+    let text = '';
+    if (Array.isArray(data?.content)) {
+      text = data.content.map((c) => (c?.type === 'text' ? c.text : '')).join('\n');
+    }
+
+    // Parse JSON array
+    let jsonResult = [];
+    const cleaned = String(text || '').trim().replace(/^```json\s*|\s*```$/g, '');
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed)) jsonResult = parsed;
+    } catch (err) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Invalid JSON response from Claude', 
+        rawText: text 
+      });
+    }
+
+    if (!jsonResult.length) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No valid data found in Claude response' 
+      });
+    }
+
+    // Prepare data for database insertion
+    const docsToInsert = [];
+    const industryMap = new Map(allIndustries.map(i => [i.name_en, i]));
+    const proLevelMap = new Map(allProLevels.map(p => [p.level, p]));
+
+    for (const item of jsonResult) {
+      // Find industry by name
+      const industry = industryMap.get(item.industry_name_en);
+      if (!industry) {
+        console.warn(`Industry not found: ${item.industry_name_en}`);
+        continue;
+      }
+
+      // Find or create position
+      let position = await Position.findOne({
+        industry_id: industry._id,
+        $or: [
+          { name_en: { $regex: new RegExp(`^${item.title_en}$`, 'i') } },
+          { name_mn: { $regex: new RegExp(`^${item.title_mn}$`, 'i') } }
+        ]
+      }).lean();
+
+      if (!position) {
+        // Create new position
+        const newPos = await Position.create({
+          industry_id: industry._id,
+          industry_sort_order: industry.sort_order,
+          industry_name_mn: industry.name_mn,
+          industry_name_en: industry.name_en,
+          name_en: item.title_en,
+          name_mn: item.title_mn,
+          sort_order: 999,
+          is_active: true,
+        });
+        position = newPos.toObject();
+      }
+
+      // Get pro level info
+      const proLevel = proLevelMap.get(item.level);
+      if (!proLevel) {
+        console.warn(`ProLevel not found: ${item.level}`);
+        continue;
+      }
+
+      // Create salary post document
+      docsToInsert.push({
+        industry_id: industry._id,
+        position_id: position._id,
+        source: 'lambda',
+        salary: item.salary,
+        level: item.level,
+        level_name_mn: proLevel.name_mn,
+        level_name_en: proLevel.name_en,
+        experience_years: item.experience_years,
+        is_verified: true,
+        is_active: true,
+      });
+    }
+
+    if (!docsToInsert.length) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No valid records to insert after processing' 
+      });
+    }
+
+    // Insert to database
+    let saved = [];
+    try {
+      saved = await SalaryPost.insertMany(docsToInsert, { ordered: false });
+    } catch (err) {
+      console.error('Error inserting salary posts:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database insertion failed', 
+        error: err.message 
+      });
+    }
+
+    // Populate saved records for response
+    const populated = await SalaryPost.find({ _id: { $in: saved.map(s => s._id) } })
+      .populate('industry_id', 'name_mn name_en')
+      .populate('position_id', 'name_mn name_en')
+      .lean();
+
+    const result = populated.map((p) => ({
+      _id: p._id,
+      industry_name_mn: p.industry_id?.name_mn,
+      industry_name_en: p.industry_id?.name_en,
+      position_name_mn: p.position_id?.name_mn,
+      position_name_en: p.position_id?.name_en,
+      salary: p.salary,
+      level: p.level,
+      level_name_mn: p.level_name_mn,
+      level_name_en: p.level_name_en,
+      experience_years: p.experience_years,
+      source: p.source,
+      is_verified: p.is_verified,
+      is_active: p.is_active,
+      createdAt: p.createdAt,
+    }));
+
+    return res.json({ 
+      success: true, 
+      analyzed: jsonResult.length,
+      inserted: saved.length,
+      data: result,
+      // rawClaudeResponse: text 
+    });
+
+  } catch (err) {
+    console.error('[claude/analyze-csv] Error:', err);
     return res.status(500).json({ success: false, message: 'Server error', error: err?.message });
   }
 });
